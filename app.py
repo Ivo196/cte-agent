@@ -7,6 +7,7 @@ from src.message_guard import classify_message
 CHAT_PLACEHOLDER = (
     "Describe your condition, age, location, prior treatments, and travel preferences..."
 )
+THINKING_LABEL = "Thinking..."
 
 
 def init_page() -> None:
@@ -96,35 +97,28 @@ def render_results(result: dict) -> None:
     st.info(result["disclaimer"])
 
 
-def handle_off_topic_message(user_input: str, guard_result: dict) -> None:
+def handle_off_topic_message(user_input: str, guard_result: dict) -> str:
     add_message("user", user_input, relevant=False)
 
     reply = guard_result["reply"]
-
-    with st.chat_message("assistant"):
-        st.markdown(reply)
-
     add_message("assistant", reply, relevant=False)
 
+    return reply
 
-def handle_relevant_message(user_input: str) -> None:
+
+def handle_relevant_message(user_input: str) -> tuple[str, dict | None]:
     add_message("user", user_input, relevant=True)
+    result = run_agent(get_user_context())
 
-    with st.chat_message("assistant"):
-        with st.spinner("Reviewing your information..."):
-            result = run_agent(get_user_context())
-
-        if result["action"] == "ask_question":
-            reply = result["question"]
-            st.markdown(reply)
-            add_message("assistant", reply, relevant=True)
-            return
-
-        reply = result.get("reply", "I found these possible candidate matches:")
-        st.markdown(reply)
+    if result["action"] == "ask_question":
+        reply = result["question"]
         add_message("assistant", reply, relevant=True)
-        st.session_state.latest_results = result
-        render_results(result)
+        return reply, None
+
+    reply = result.get("reply", "I found these possible candidate matches:")
+    add_message("assistant", reply, relevant=True)
+    st.session_state.latest_results = result
+    return reply, result
 
 
 def handle_user_input(user_input: str) -> None:
@@ -133,16 +127,23 @@ def handle_user_input(user_input: str) -> None:
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    guard_result = classify_message(
-        message=user_input,
-        conversation_context=previous_context,
-    )
+    with st.chat_message("assistant"):
+        with st.spinner(THINKING_LABEL):
+            guard_result = classify_message(
+                message=user_input,
+                conversation_context=previous_context,
+            )
 
-    if guard_result["classification"] == "off_topic":
-        handle_off_topic_message(user_input, guard_result)
-        return
+            if guard_result["classification"] == "off_topic":
+                reply = handle_off_topic_message(user_input, guard_result)
+                result = None
+            else:
+                reply, result = handle_relevant_message(user_input)
 
-    handle_relevant_message(user_input)
+        st.markdown(reply)
+
+        if result:
+            render_results(result)
 
 
 def main() -> None:
