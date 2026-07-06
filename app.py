@@ -4,32 +4,31 @@ from src.agent import run_agent
 from src.message_guard import classify_message
 
 
-st.set_page_config(
-    page_title="Clinical Trial Eligibility Agent",
-    page_icon=":material/local_hospital:",
-)
-
-st.title("Clinical Trial Eligibility Agent")
-
-st.caption(
-    "Describe your condition, age, location, prior treatments, and travel preferences. "
-    "This tool identifies possible clinical trial matches only."
-)
-
-st.warning(
-    "This is not medical advice and does not determine eligibility. "
-    "Always discuss possible trials with your doctor and the clinical trial team."
+CHAT_PLACEHOLDER = (
+    "Describe your condition, age, location, prior treatments, and travel preferences..."
 )
 
 
-# ----------------------------
-# Session state
-# ----------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+def init_page() -> None:
+    st.set_page_config(
+        page_title="Clinical Trial Eligibility Agent",
+        page_icon=":material/local_hospital:",
+    )
 
-if "latest_results" not in st.session_state:
-    st.session_state.latest_results = None
+    st.title("Clinical Trial Eligibility Agent")
+    st.caption(
+        "Describe your condition, age, location, prior treatments, and travel "
+        "preferences. This tool identifies possible clinical trial matches only."
+    )
+    st.warning(
+        "This is not medical advice and does not determine eligibility. "
+        "Always discuss possible trials with your doctor and the clinical trial team."
+    )
+
+
+def init_state() -> None:
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("latest_results", None)
 
 
 def add_message(role: str, content: str, relevant: bool = True) -> None:
@@ -43,11 +42,6 @@ def add_message(role: str, content: str, relevant: bool = True) -> None:
 
 
 def get_user_context() -> str:
-    """
-    Returns only relevant user messages.
-    Off-topic messages remain visible in the chat,
-    but are excluded from the medical context.
-    """
     return "\n".join(
         message["content"]
         for message in st.session_state.messages
@@ -55,90 +49,87 @@ def get_user_context() -> str:
     )
 
 
+def render_history() -> None:
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+
+def render_trial_result(trial: dict) -> None:
+    location = trial.get("location") or {}
+    phase = ", ".join(trial["phase"]) if trial["phase"] else "Not listed"
+
+    st.subheader(f'{trial["nct_id"]} - {trial["title"]}')
+    st.write(f'**Assessment:** {trial["label"].replace("_", " ").title()}')
+    st.write(f'**Reason:** {trial["reason"]}')
+    st.write(f'**Status:** {trial["status"]}')
+    st.write(f"**Phase:** {phase}")
+
+    if location:
+        st.write(
+            f"**Recruiting location:** "
+            f'{location.get("facility", "Unknown site")} - '
+            f'{location.get("city", "Unknown city")}, '
+            f'{location.get("country", "Unknown country")}'
+        )
+
+    if trial.get("missing_information"):
+        st.write(
+            "**Information to confirm:** "
+            + "; ".join(trial["missing_information"][:4])
+        )
+
+    st.link_button("View trial on ClinicalTrials.gov", trial["trial_url"])
+    st.divider()
+
+
 def render_results(result: dict) -> None:
     results = result.get("results", [])
 
     if not results:
-        st.info(
-            "I could not find candidate trials that match the basic "
-            "age, sex, recruitment, and location filters."
-        )
+        st.info(result.get("reply", "No candidate trials found."))
         return
 
-    label_order = {
-        "likely_eligible": 0,
-        "possibly_eligible": 1,
-        "likely_not_eligible": 2,
-    }
-
-    sorted_results = sorted(
-        results,
-        key=lambda item: label_order.get(item["label"], 3),
-    )
-
-    for trial in sorted_results:
-        location = trial.get("location") or {}
-
-        st.subheader(f'{trial["nct_id"]} - {trial["title"]}')
-
-        st.write(f'**Assessment:** {trial["label"].replace("_", " ").title()}')
-        st.write(f'**Reason:** {trial["reason"]}')
-        st.write(f'**Status:** {trial["status"]}')
-
-        phase = ", ".join(trial["phase"]) if trial["phase"] else "Not listed"
-        st.write(f"**Phase:** {phase}")
-
-        if location:
-            st.write(
-                f"**Recruiting location:** "
-                f'{location.get("facility", "Unknown site")} - '
-                f'{location.get("city", "Unknown city")}, '
-                f'{location.get("country", "Unknown country")}'
-            )
-
-        if trial.get("missing_information"):
-            st.write(
-                "**Information to confirm:** "
-                + "; ".join(trial["missing_information"][:4])
-            )
-
-        st.link_button(
-            "View trial on ClinicalTrials.gov",
-            trial["trial_url"],
-        )
-
-        st.divider()
+    for trial in results:
+        render_trial_result(trial)
 
     st.info(result["disclaimer"])
 
 
-# ----------------------------
-# Render previous history
-# ----------------------------
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+def handle_off_topic_message(user_input: str, guard_result: dict) -> None:
+    add_message("user", user_input, relevant=False)
+
+    reply = guard_result["reply"]
+
+    with st.chat_message("assistant"):
+        st.markdown(reply)
+
+    add_message("assistant", reply, relevant=False)
 
 
-# ----------------------------
-# Render latest trial results
-# ----------------------------
-if st.session_state.latest_results:
-    render_results(st.session_state.latest_results)
+def handle_relevant_message(user_input: str) -> None:
+    add_message("user", user_input, relevant=True)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Reviewing your information..."):
+            result = run_agent(get_user_context())
+
+        if result["action"] == "ask_question":
+            reply = result["question"]
+            st.markdown(reply)
+            add_message("assistant", reply, relevant=True)
+            return
+
+        reply = result.get("reply", "I found these possible candidate matches:")
+        st.markdown(reply)
+        add_message("assistant", reply, relevant=True)
+        st.session_state.latest_results = result
+        render_results(result)
 
 
-# ----------------------------
-# New message
-# ----------------------------
-user_input = st.chat_input(
-    "Describe your condition, age, location, prior treatments, and travel preferences..."
-)
-
-if user_input:
-    # Context before the new message is added.
+def handle_user_input(user_input: str) -> None:
     previous_context = get_user_context()
 
-    # Show the user message immediately.
     with st.chat_message("user"):
         st.markdown(user_input)
 
@@ -147,68 +138,26 @@ if user_input:
         conversation_context=previous_context,
     )
 
-    # ----------------------------
-    # Off-topic message
-    # ----------------------------
     if guard_result["classification"] == "off_topic":
-        add_message(
-            role="user",
-            content=user_input,
-            relevant=False,
-        )
+        handle_off_topic_message(user_input, guard_result)
+        return
 
-        reply = guard_result["reply"]
+    handle_relevant_message(user_input)
 
-        with st.chat_message("assistant"):
-            st.markdown(reply)
 
-        add_message(
-            role="assistant",
-            content=reply,
-            relevant=False,
-        )
+def main() -> None:
+    init_page()
+    init_state()
+    render_history()
 
-    # ----------------------------
-    # Relevant medical message
-    # ----------------------------
-    else:
-        add_message(
-            role="user",
-            content=user_input,
-            relevant=True,
-        )
+    if st.session_state.latest_results:
+        render_results(st.session_state.latest_results)
 
-        full_context = get_user_context()
+    user_input = st.chat_input(CHAT_PLACEHOLDER)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Reviewing your information..."):
-                result = run_agent(full_context)
+    if user_input:
+        handle_user_input(user_input)
 
-            if result["action"] == "ask_question":
-                reply = result["question"]
 
-                st.markdown(reply)
-
-                add_message(
-                    role="assistant",
-                    content=reply,
-                    relevant=True,
-                )
-
-            else:
-                reply = result.get(
-                    "reply",
-                    "I found these possible candidate matches:",
-                )
-
-                st.markdown(reply)
-
-                add_message(
-                    role="assistant",
-                    content=reply,
-                    relevant=True,
-                )
-
-                st.session_state.latest_results = result
-
-                render_results(result)
+if __name__ == "__main__":
+    main()

@@ -48,11 +48,11 @@ pytest
 - `src/agent.py`: main agent loop: ask, search, shortlist, fetch details, assess, return.
 - `src/profile_extractor.py`: extracts a structured patient profile from free text.
 - `src/message_guard.py`: keeps the chat focused on clinical-trial matching.
+- `src/llm.py`: central OpenAI client and JSON response helper.
 - `src/clinicaltrials_client.py`: ClinicalTrials.gov API integration.
 - `src/trial_cleaner.py`: normalizes raw trial records and separates eligibility text into inclusion/exclusion sections.
 - `src/eligibility.py`: deterministic hard filters before spending LLM calls.
 - `src/semantic_matcher.py`: LLM-based soft eligibility assessment.
-- `src/models.py`: shared Pydantic models for important result shapes.
 - `tests/`: unit tests using mocks and local sample data.
 
 ## Key Design Decisions

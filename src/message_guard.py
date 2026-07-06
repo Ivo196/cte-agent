@@ -1,15 +1,4 @@
-import os
-
-from dotenv import load_dotenv
-from openai import OpenAI
-from src.utils import parse_json_object
-
-
-load_dotenv()
-
-
-def get_client() -> OpenAI:
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from src.llm import ask_json
 
 
 def classify_message(message: str, conversation_context: str) -> dict:
@@ -60,9 +49,4 @@ Rules:
 - Do not provide medical advice.
 """
 
-    response = get_client().responses.create(
-        model="gpt-5-mini",
-        input=prompt,
-    )
-
-    return parse_json_object(response.output_text)
+    return ask_json(prompt)

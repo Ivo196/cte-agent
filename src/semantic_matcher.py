@@ -1,16 +1,6 @@
 import json
-import os
 
-from dotenv import load_dotenv
-from openai import OpenAI
-from src.utils import parse_json_object
-
-
-load_dotenv()
-
-
-def get_client() -> OpenAI:
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from src.llm import ask_json
 
 
 def assess_trial_match(patient: dict, trial: dict) -> dict:
@@ -69,9 +59,4 @@ Return valid JSON only with this exact structure:
 }}
 """
 
-    response = get_client().responses.create(
-        model="gpt-5-mini",
-        input=prompt,
-    )
-
-    return parse_json_object(response.output_text)
+    return ask_json(prompt)
