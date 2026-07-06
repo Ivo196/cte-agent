@@ -9,8 +9,8 @@ SECTION_HEADINGS = {
 
 def parse_age(age_text: str | None) -> int | None:
     """
-    Convierte textos como '18 Years' en 18.
-    Si no hay edad o no se puede leer, devuelve None.
+    Converts text like '18 Years' into 18.
+    Returns None when the value is missing or cannot be parsed.
     """
     if not age_text:
         return None
@@ -28,7 +28,7 @@ def _clean_criterion_line(line: str) -> str:
     Removes common bullets and extra whitespace from one criterion line.
     """
     line = line.strip()
-    line = re.sub(r"^[-*•\u2022]\s*", "", line)
+    line = re.sub(r"^[-*\u2022]\s*", "", line)
     line = re.sub(r"^\d+[\.)]\s*", "", line)
     return re.sub(r"\s+", " ", line).strip()
 
@@ -75,8 +75,8 @@ def split_criteria(eligibility_text: str | None) -> dict[str, list[str]]:
 
 def clean_trial(study: dict) -> dict:
     """
-    Convierte el JSON grande de ClinicalTrials.gov
-    en un diccionario pequeño y útil para nuestro agente.
+    Converts a large ClinicalTrials.gov JSON record into a small dictionary
+    with only the fields the agent needs.
     """
 
     protocol = study.get("protocolSection", {})
@@ -132,7 +132,7 @@ def get_recruiting_locations_in_country(
     country: str,
 ) -> list[dict]:
     """
-    Devuelve solo sedes recruiting del país pedido.
+    Returns recruiting sites in the requested country only.
     """
     return [
         location

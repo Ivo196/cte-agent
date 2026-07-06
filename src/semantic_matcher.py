@@ -14,11 +14,11 @@ def get_client() -> OpenAI:
 
 def assess_trial_match(patient: dict, trial: dict) -> dict:
     """
-    Compara un paciente con un trial usando el LLM.
+    Compares a patient profile with a trial using the LLM.
 
-    Python ya filtró edad, sexo y ubicación.
-    Esta función analiza criterios más difíciles:
-    stage, metastatic disease, HER2, tratamientos previos, etc.
+    Python has already filtered age, sex, and location.
+    This function analyzes harder criteria:
+    stage, metastatic disease, HER2, prior treatments, and similar details.
     """
 
     patient_text = json.dumps(patient, indent=2)

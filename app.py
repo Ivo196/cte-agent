@@ -6,7 +6,7 @@ from src.message_guard import classify_message
 
 st.set_page_config(
     page_title="Clinical Trial Eligibility Agent",
-    page_icon="🏥",
+    page_icon=":material/local_hospital:",
 )
 
 st.title("Clinical Trial Eligibility Agent")
@@ -81,7 +81,7 @@ def render_results(result: dict) -> None:
     for trial in sorted_results:
         location = trial.get("location") or {}
 
-        st.subheader(f'{trial["nct_id"]} — {trial["title"]}')
+        st.subheader(f'{trial["nct_id"]} - {trial["title"]}')
 
         st.write(f'**Assessment:** {trial["label"].replace("_", " ").title()}')
         st.write(f'**Reason:** {trial["reason"]}')
@@ -93,7 +93,7 @@ def render_results(result: dict) -> None:
         if location:
             st.write(
                 f"**Recruiting location:** "
-                f'{location.get("facility", "Unknown site")} — '
+                f'{location.get("facility", "Unknown site")} - '
                 f'{location.get("city", "Unknown city")}, '
                 f'{location.get("country", "Unknown country")}'
             )
