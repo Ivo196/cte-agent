@@ -6,7 +6,7 @@ TRIAL_FIELDS = [
     "NCTId",
     "BriefTitle",
     "OverallStatus",
-    "Phases",
+    "Phase",
     "StudyType",
     "Condition",
     "BriefSummary",

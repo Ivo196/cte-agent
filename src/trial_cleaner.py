@@ -2,8 +2,8 @@ import re
 
 
 SECTION_HEADINGS = {
-    "inclusion": re.compile(r"^\s*(key\s+)?inclusion criteria\s*:?\s*$", re.I),
-    "exclusion": re.compile(r"^\s*(key\s+)?exclusion criteria\s*:?\s*$", re.I),
+    "inclusion": re.compile(r"^\s*(key\s+)?inclusion criteria\b.*:?\s*$", re.I),
+    "exclusion": re.compile(r"^\s*(key\s+)?exclusion criteria\b.*:?\s*$", re.I),
 }
 
 

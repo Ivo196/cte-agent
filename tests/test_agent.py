@@ -47,8 +47,15 @@ def test_run_agent_returns_ranked_candidate_results(monkeypatch) -> None:
         "trial_url": "https://clinicaltrials.gov/study/NCT123",
     }
 
+    detail_calls = []
+
     monkeypatch.setattr(agent, "extract_patient_profile", lambda _: patient)
     monkeypatch.setattr(agent, "search_trials", lambda **_: [{"raw": "study"}])
+    monkeypatch.setattr(
+        agent,
+        "get_trial_details",
+        lambda nct_id: detail_calls.append(nct_id) or {"raw": "full-study"},
+    )
     monkeypatch.setattr(agent, "clean_trial", lambda _: trial)
     monkeypatch.setattr(agent, "passes_hard_filters", lambda **_: (True, []))
     monkeypatch.setattr(
@@ -68,3 +75,4 @@ def test_run_agent_returns_ranked_candidate_results(monkeypatch) -> None:
     assert result["results"][0]["nct_id"] == "NCT123"
     assert result["results"][0]["label"] == "possibly_eligible"
     assert result["results"][0]["location"]["city"] == "Copenhagen"
+    assert detail_calls == ["NCT123"]

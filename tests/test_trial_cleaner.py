@@ -31,6 +31,21 @@ def test_split_criteria_separates_inclusion_and_exclusion() -> None:
     ]
 
 
+def test_split_criteria_accepts_key_criteria_headings() -> None:
+    text = """
+    Key inclusion criteria for both phases:
+    1. Adult females and adult males.
+
+    Key exclusion criteria for both phases:
+    1. History of another primary malignancy.
+    """
+
+    criteria = split_criteria(text)
+
+    assert criteria["inclusion"] == ["Adult females and adult males."]
+    assert criteria["exclusion"] == ["History of another primary malignancy."]
+
+
 def test_clean_trial_keeps_only_useful_fields() -> None:
     study = {
         "protocolSection": {

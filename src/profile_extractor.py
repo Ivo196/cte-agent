@@ -1,8 +1,8 @@
-import json
 import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from src.utils import parse_json_object
 
 load_dotenv()
 
@@ -51,4 +51,4 @@ Rules:
         input=prompt,
     )
 
-    return json.loads(response.output_text)
+    return parse_json_object(response.output_text)

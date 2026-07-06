@@ -1,4 +1,4 @@
-from src.clinicaltrials_client import search_trials
+from src.clinicaltrials_client import get_trial_details, search_trials
 from src.profile_extractor import extract_patient_profile
 from src.trial_cleaner import clean_trial, get_recruiting_locations_in_country
 from src.eligibility import passes_hard_filters
@@ -100,7 +100,7 @@ def run_agent(user_message: str) -> dict:
         page_size=20,
     )
 
-    candidate_trials = []
+    shallow_candidates = []
 
     for study in studies:
         trial = clean_trial(study)
@@ -122,10 +122,15 @@ def run_agent(user_message: str) -> dict:
         if is_supportive_or_non_treatment_trial(trial):
             continue
 
-        candidate_trials.append(trial)
+        shallow_candidates.append(trial)
 
-    # We only deeply assess a small shortlist with the LLM.
-    candidate_trials = candidate_trials[:6]
+    # We only fetch full records for a small shortlist, instead of deep-reading
+    # every search result from ClinicalTrials.gov.
+    candidate_trials = []
+
+    for shallow_trial in shallow_candidates[:6]:
+        full_study = get_trial_details(shallow_trial["nct_id"])
+        candidate_trials.append(clean_trial(full_study))
 
     results = []
 

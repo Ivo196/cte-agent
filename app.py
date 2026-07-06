@@ -65,8 +65,6 @@ def render_results(result: dict) -> None:
         )
         return
 
-    st.markdown("I found these possible candidate matches:")
-
     label_order = {
         "likely_eligible": 0,
         "possibly_eligible": 1,
