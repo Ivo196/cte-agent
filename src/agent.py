@@ -33,16 +33,6 @@ LABEL_ORDER = {
     "likely_not_eligible": 2,
 }
 
-SUPPORTIVE_TRIAL_KEYWORDS = [
-    "acupuncture",
-    "nausea",
-    "quality of life",
-    "decision making",
-    "supportive care",
-    "brown fat",
-    "metabolic rate",
-]
-
 SAFETY_DISCLAIMER = (
     "These are possible candidate matches only, not medical advice or "
     "a definitive eligibility decision. Please discuss them with your "
@@ -62,16 +52,6 @@ def build_clarifying_question(missing_fields: list[str]) -> str:
     return CLARIFYING_QUESTIONS[missing_fields[0]]
 
 
-def is_supportive_or_non_treatment_trial(trial: dict) -> bool:
-    title = (trial.get("title") or "").lower()
-    summary = (trial.get("brief_summary") or "").lower()
-
-    return any(
-        keyword in title or keyword in summary
-        for keyword in SUPPORTIVE_TRIAL_KEYWORDS
-    )
-
-
 def _passes_initial_filters(patient: dict, trial: dict) -> bool:
     passed, _ = passes_hard_filters(
         patient=patient,
@@ -85,7 +65,7 @@ def _passes_initial_filters(patient: dict, trial: dict) -> bool:
     if trial.get("study_type") != "INTERVENTIONAL":
         return False
 
-    return not is_supportive_or_non_treatment_trial(trial)
+    return True
 
 
 def _search_shallow_candidates(patient: dict) -> list[dict]:
@@ -160,6 +140,7 @@ def run_agent(user_message: str) -> dict:
     patient = extract_patient_profile(user_message)
     missing_fields = get_missing_required_fields(patient)
 
+    # The agent does not search until it has the minimum clinical context.
     if missing_fields:
         return {
             "action": "ask_question",
@@ -169,6 +150,8 @@ def run_agent(user_message: str) -> dict:
 
     shallow_candidates = _search_shallow_candidates(patient)
     detailed_trials = _fetch_detailed_trials(shallow_candidates)
+
+    # Only the shortlisted trials are sent to the LLM for softer eligibility checks.
     results = _sort_results(
         [_build_trial_result(patient, trial) for trial in detailed_trials]
     )

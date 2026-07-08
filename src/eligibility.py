@@ -1,4 +1,7 @@
-def normalize_sex(value: str | None) -> str | None:
+from typing import Optional
+
+
+def normalize_sex(value: Optional[str]) -> Optional[str]:
     """
     Converts possible patient values into the ClinicalTrials format.
     """

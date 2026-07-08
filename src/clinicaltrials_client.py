@@ -1,3 +1,5 @@
+from typing import Optional
+
 import requests
 
 BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
@@ -24,7 +26,7 @@ TRIAL_FIELDS = [
 
 def search_trials(
     condition: str,
-    country: str | None = None,
+    country: Optional[str] = None,
     page_size: int = 20,
 ) -> list[dict]:
     """

@@ -1,27 +1,34 @@
 # CTE Agent
 
-Clinical Trial Eligibility agent that helps a patient find possible recruiting clinical trial matches from ClinicalTrials.gov.
+CTE means **Clinical Trial Eligibility**.
 
-The app is intentionally small: a Streamlit chat UI collects the patient's situation, an agent extracts missing clinical details, searches ClinicalTrials.gov, filters obvious non-matches with code, and asks an LLM to reason over softer eligibility criteria.
+This project is a small patient-facing agent that helps find possible recruiting
+clinical trial matches from [ClinicalTrials.gov](https://clinicaltrials.gov/).
 
-## What It Does
+The goal is not to make a perfect medical system. The goal is to show a clear
+agent design:
 
-1. Accepts a free-text patient description.
-2. Extracts age, sex, condition, stage, prior treatments, biomarkers, country, and travel preference.
-3. Asks a clarifying question when key information is missing.
-4. Searches recruiting trials in ClinicalTrials.gov.
-5. Cleans each trial into a smaller structure.
-6. Applies deterministic filters for status, age, sex, and recruiting country.
-7. Fetches full details for a small shortlisted set instead of deep-reading every search result.
-8. Uses the LLM only for softer criteria such as stage, prior treatments, biomarkers, and uncertainty.
-9. Returns a ranked shortlist with a safety disclaimer.
+1. Collect a patient description in plain language.
+2. Turn that description into a structured patient profile.
+3. Ask a clarification question if important information is missing.
+4. Search ClinicalTrials.gov for recruiting trials.
+5. Clean the messy trial records into a smaller structure.
+6. Filter obvious non-matches with normal Python code.
+7. Use the LLM only for the softer eligibility reasoning.
+8. Return a ranked shortlist with links and a safety disclaimer.
 
-## Run Locally
+## Quick Start
+
+Create a virtual environment:
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+python3 -m venv .venv
+```
+
+Install dependencies:
+
+```bash
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
 Create a `.env` file:
@@ -33,46 +40,152 @@ OPENAI_API_KEY=your_api_key_here
 Run the app:
 
 ```bash
-streamlit run app.py
+.venv/bin/streamlit run app.py
 ```
 
 Run tests:
 
 ```bash
-pytest
+.venv/bin/python -m pytest -q
 ```
 
-## Architecture
+## The Simple Architecture
 
-- `app.py`: Streamlit chat interface and session state.
-- `src/agent.py`: main agent loop: ask, search, shortlist, fetch details, assess, return.
-- `src/profile_extractor.py`: extracts a structured patient profile from free text.
-- `src/message_guard.py`: keeps the chat focused on clinical-trial matching.
-- `src/llm.py`: central OpenAI client and JSON response helper.
-- `src/clinicaltrials_client.py`: ClinicalTrials.gov API integration.
-- `src/trial_cleaner.py`: normalizes raw trial records and separates eligibility text into inclusion/exclusion sections.
-- `src/eligibility.py`: deterministic hard filters before spending LLM calls.
-- `src/semantic_matcher.py`: LLM-based soft eligibility assessment.
-- `tests/`: unit tests using mocks and local sample data.
+The app is intentionally split into small files so each part has one job.
 
-## Key Design Decisions
+```text
+Patient message
+    |
+    v
+app.py
+    |
+    v
+src/agent.py
+    |
+    +--> src/profile_extractor.py
+    |       Extracts age, sex, condition, stage, treatments, biomarkers,
+    |       country, city, and travel preference from free text.
+    |
+    +--> src/clinicaltrials_client.py
+    |       Searches ClinicalTrials.gov and fetches full trial details.
+    |
+    +--> src/trial_cleaner.py
+    |       Keeps only the fields the agent needs and splits eligibility
+    |       criteria into inclusion, exclusion, and other sections.
+    |
+    +--> src/eligibility.py
+    |       Applies hard filters in code: recruiting status, age, sex,
+    |       country, and interventional study type.
+    |
+    +--> src/semantic_matcher.py
+            Uses the LLM for soft criteria like disease stage, prior
+            treatments, biomarkers, and missing information.
+```
 
-- Hard constraints are checked in Python first: recruiting status, age range, sex, and country.
-- The LLM is reserved for criteria that need interpretation, such as disease stage, prior therapies, and biomarkers.
-- The ClinicalTrials.gov request uses a limited `fields` list to avoid carrying full records through the app.
-- Full trial records are fetched only for the shortlisted candidates that pass deterministic filters.
-- Results are framed as candidate matches only, never as medical advice or a definitive eligibility ruling.
-- The UI is simple on purpose because the project is about data cleaning and agent behavior, not polished styling.
+`src/input_guard.py` is a small support module used by the UI. It keeps casual
+or unrelated messages out of the patient profile, so the agent does not treat a
+joke or random question as medical context.
+
+## File Guide
+
+- `app.py`: Streamlit chat UI. It stores the conversation and displays results.
+- `src/input_guard.py`: Keeps unrelated chat messages out of the patient profile.
+- `src/agent.py`: Main control flow. This is the best file to read first.
+- `src/profile_extractor.py`: LLM prompt that converts patient text into JSON.
+- `src/clinicaltrials_client.py`: ClinicalTrials.gov API calls.
+- `src/trial_cleaner.py`: Data cleaning for trial records and eligibility text.
+- `src/eligibility.py`: Deterministic filters before spending LLM calls.
+- `src/semantic_matcher.py`: LLM-based eligibility assessment for candidate trials.
+- `src/llm.py`: Shared OpenAI client helper.
+- `src/utils.py`: Small JSON parsing helper for model output.
+- `tests/`: Unit tests with mocked API and LLM behavior.
+
+## Main Agent Flow
+
+The main flow is in `src/agent.py`.
+
+1. `run_agent()` receives all patient messages so far.
+2. `extract_patient_profile()` converts the text into structured JSON.
+3. If age, sex, condition, country, or disease stage is missing, the agent asks
+   one clarifying question and stops.
+4. If the profile is complete enough, `search_trials()` queries recruiting
+   trials from ClinicalTrials.gov.
+5. Each search result is passed through `clean_trial()`.
+6. `passes_hard_filters()` removes trials that clearly do not match.
+7. The agent fetches full details for only the best small shortlist.
+8. `assess_trial_match()` asks the LLM to classify each candidate trial.
+9. Results are sorted as:
+   - `likely_eligible`
+   - `possibly_eligible`
+   - `likely_not_eligible`
+10. The UI shows the shortlist with NCT ID, title, phase, location, reason,
+    missing information, and a ClinicalTrials.gov link.
+
+## Important Design Choices
+
+### 1. The LLM does not do everything
+
+Hard constraints are checked with Python first:
+
+- Trial must be recruiting.
+- Patient age must fit the trial age range.
+- Patient sex must match the trial sex rule.
+- Trial must have a recruiting location in the requested country.
+- Trial must be interventional.
+
+This keeps the system cheaper, easier to test, and easier to explain.
+
+### 2. The LLM is used where text interpretation matters
+
+Clinical trial eligibility criteria are often written as messy free text. The
+LLM is used after filtering to reason about softer criteria:
+
+- Disease stage
+- Prior treatments
+- Biomarkers
+- Uncertainty or missing information
+
+### 3. The app carries only useful trial fields
+
+ClinicalTrials.gov records are large. The client requests a limited field list,
+and the cleaner converts each trial into a smaller dictionary that the agent can
+reason over.
+
+### 4. The output is careful
+
+The app never says a patient is definitely eligible. It returns possible
+candidate matches and tells the patient to confirm with their doctor and the
+clinical trial team.
+
+## What To Say In The Interview
+
+Short version:
+
+> I built a Clinical Trial Eligibility agent. The patient describes their case
+> in plain language. The agent extracts a structured profile, asks if key
+> details are missing, searches ClinicalTrials.gov, cleans the raw trial data,
+> filters obvious non-matches with deterministic code, and uses the LLM only for
+> ambiguous eligibility text. The result is a ranked shortlist of candidate
+> trials, not medical advice.
+
+The most important technical point:
+
+> I separated hard constraints from soft reasoning. Age, sex, recruiting status,
+> location, and study type are checked in code. Stage, prior treatment history,
+> biomarkers, and uncertainty are handled by the LLM.
 
 ## Limitations
 
-- Location matching is country-level, not true distance-to-site matching.
-- Eligibility parsing is section-based and conservative; it does not fully understand every criteria sentence.
-- The agent loop is focused on one patient at a time and one shortlist pass.
-- LLM JSON responses should be made stricter with structured outputs in a production version.
+- Location matching is country-level, not city-level distance matching.
+- The eligibility parser is conservative and section-based.
+- The app handles one patient at a time.
+- LLM responses are parsed as JSON, but production code should use stricter
+  structured outputs and validation.
+- The ranking is simple and mainly based on the LLM eligibility label.
 
 ## With More Time
 
-- Add structured OpenAI outputs with Pydantic validation.
-- Add better ranking using location, phase, condition match, and eligibility confidence.
-- Improve travel-distance handling and city-level matching.
+- Add structured OpenAI outputs with schema validation.
+- Improve ranking with distance, phase, condition match, and confidence.
+- Add better error handling for API or LLM failures.
+- Add city-level or radius-based location matching.

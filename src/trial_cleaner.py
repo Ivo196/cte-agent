@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 
 SECTION_HEADINGS = {
@@ -7,7 +8,7 @@ SECTION_HEADINGS = {
 }
 
 
-def parse_age(age_text: str | None) -> int | None:
+def parse_age(age_text: Optional[str]) -> Optional[int]:
     """
     Converts text like '18 Years' into 18.
     Returns None when the value is missing or cannot be parsed.
@@ -33,7 +34,7 @@ def _clean_criterion_line(line: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
 
 
-def split_criteria(eligibility_text: str | None) -> dict[str, list[str]]:
+def split_criteria(eligibility_text: Optional[str]) -> dict[str, list[str]]:
     """
     Splits a ClinicalTrials.gov eligibility blob into inclusion and exclusion lists.
 

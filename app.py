@@ -1,7 +1,9 @@
+from typing import Optional
+
 import streamlit as st
 
 from src.agent import run_agent
-from src.message_guard import classify_message
+from src.input_guard import classify_message
 
 
 CHAT_PLACEHOLDER = (
@@ -97,48 +99,40 @@ def render_results(result: dict) -> None:
     st.info(result["disclaimer"])
 
 
-def handle_off_topic_message(user_input: str, guard_result: dict) -> str:
-    add_message("user", user_input, relevant=False)
+def handle_agent_turn(user_input: str) -> tuple[str, Optional[dict]]:
+    guard_result = classify_message(
+        message=user_input,
+        conversation_context=get_user_context(),
+    )
 
-    reply = guard_result["reply"]
-    add_message("assistant", reply, relevant=False)
+    if guard_result["classification"] == "off_topic":
+        add_message("user", user_input, relevant=False)
+        reply = guard_result["reply"]
+        add_message("assistant", reply, relevant=False)
+        return reply, None
 
-    return reply
-
-
-def handle_relevant_message(user_input: str) -> tuple[str, dict | None]:
-    add_message("user", user_input, relevant=True)
+    add_message("user", user_input)
     result = run_agent(get_user_context())
 
     if result["action"] == "ask_question":
         reply = result["question"]
-        add_message("assistant", reply, relevant=True)
+        add_message("assistant", reply)
+        st.session_state.latest_results = None
         return reply, None
 
     reply = result.get("reply", "I found these possible candidate matches:")
-    add_message("assistant", reply, relevant=True)
+    add_message("assistant", reply)
     st.session_state.latest_results = result
     return reply, result
 
 
 def handle_user_input(user_input: str) -> None:
-    previous_context = get_user_context()
-
     with st.chat_message("user"):
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
         with st.spinner(THINKING_LABEL):
-            guard_result = classify_message(
-                message=user_input,
-                conversation_context=previous_context,
-            )
-
-            if guard_result["classification"] == "off_topic":
-                reply = handle_off_topic_message(user_input, guard_result)
-                result = None
-            else:
-                reply, result = handle_relevant_message(user_input)
+            reply, result = handle_agent_turn(user_input)
 
         st.markdown(reply)
 
