@@ -157,35 +157,3 @@ The app never says a patient is definitely eligible. It returns possible
 candidate matches and tells the patient to confirm with their doctor and the
 clinical trial team.
 
-## What To Say In The Interview
-
-Short version:
-
-> I built a Clinical Trial Eligibility agent. The patient describes their case
-> in plain language. The agent extracts a structured profile, asks if key
-> details are missing, searches ClinicalTrials.gov, cleans the raw trial data,
-> filters obvious non-matches with deterministic code, and uses the LLM only for
-> ambiguous eligibility text. The result is a ranked shortlist of candidate
-> trials, not medical advice.
-
-The most important technical point:
-
-> I separated hard constraints from soft reasoning. Age, sex, recruiting status,
-> location, and study type are checked in code. Stage, prior treatment history,
-> biomarkers, and uncertainty are handled by the LLM.
-
-## Limitations
-
-- Location matching is country-level, not city-level distance matching.
-- The eligibility parser is conservative and section-based.
-- The app handles one patient at a time.
-- LLM responses are parsed as JSON, but production code should use stricter
-  structured outputs and validation.
-- The ranking is simple and mainly based on the LLM eligibility label.
-
-## With More Time
-
-- Add structured OpenAI outputs with schema validation.
-- Improve ranking with distance, phase, condition match, and confidence.
-- Add better error handling for API or LLM failures.
-- Add city-level or radius-based location matching.
