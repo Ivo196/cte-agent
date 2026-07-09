@@ -2,11 +2,11 @@
 
 CTE means **Clinical Trial Eligibility**.
 
-This project is a small patient-facing agent that helps find possible recruiting
-clinical trial matches from [ClinicalTrials.gov](https://clinicaltrials.gov/).
+This project is a small patient-facing agent that helps patients find possible
+recruiting clinical trial matches from
+[ClinicalTrials.gov](https://clinicaltrials.gov/).
 
-The goal is not to make a perfect medical system. The goal is to show a clear
-agent design:
+The app keeps the workflow simple and safety-focused:
 
 1. Collect a patient description in plain language.
 2. Turn that description into a structured patient profile.
@@ -157,3 +157,15 @@ The app never says a patient is definitely eligible. It returns possible
 candidate matches and tells the patient to confirm with their doctor and the
 clinical trial team.
 
+## Limitations
+
+- Location matching is country-level, not city-level distance matching.
+- The eligibility parser is conservative and section-based.
+- LLM responses are parsed as JSON, but production code should use stricter
+  structured outputs and validation.
+
+## Future Work
+
+- Improve ranking with distance, phase, condition match, and confidence.
+- Add better error handling for API or LLM failures.
+- Add city-level or radius-based location matching.
