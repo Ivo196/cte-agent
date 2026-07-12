@@ -1,4 +1,10 @@
-from src.trial_cleaner import clean_trial, parse_age, split_criteria
+from src.trial_cleaner import (
+    build_candidate_summary,
+    clean_trial,
+    parse_age,
+    select_nearest_recruiting_location,
+    split_criteria,
+)
 
 
 def test_parse_age_reads_clinicaltrials_age_text() -> None:
@@ -106,3 +112,51 @@ def test_clean_trial_keeps_only_useful_fields() -> None:
     ]
     assert trial["inclusion_criteria"] == ["Breast cancer"]
     assert trial["exclusion_criteria"] == ["Active infection"]
+    assert "eligibility_criteria" not in trial
+
+
+def test_candidate_summary_is_compact_and_excludes_criteria() -> None:
+    trial = {
+        "nct_id": "NCT123",
+        "title": "Study",
+        "phase": ["PHASE2"],
+        "study_type": "INTERVENTIONAL",
+        "conditions": ["Breast Cancer"],
+        "min_age": 18,
+        "max_age": 80,
+        "sex": "ALL",
+        "locations": [{"city": "Copenhagen", "country": "Denmark"}],
+        "brief_summary": "A" * 700,
+        "inclusion_criteria": ["Private detailed criterion"],
+    }
+
+    summary = build_candidate_summary(trial)
+
+    assert summary["nct_id"] == "NCT123"
+    assert len(summary["brief_summary"]) == 500
+    assert "inclusion_criteria" not in summary
+
+
+def test_nearest_location_prefers_patient_city_then_country() -> None:
+    trial = {
+        "locations": [
+            {"facility": "Aarhus Site", "city": "Aarhus", "country": "Denmark"},
+            {
+                "facility": "Copenhagen Site",
+                "city": "Copenhagen",
+                "country": "Denmark",
+            },
+        ]
+    }
+
+    exact = select_nearest_recruiting_location(
+        trial,
+        {"city": "Copenhagen", "country": "Denmark"},
+    )
+    country_fallback = select_nearest_recruiting_location(
+        trial,
+        {"city": "Odense", "country": "Denmark"},
+    )
+
+    assert exact["facility"] == "Copenhagen Site"
+    assert country_fallback["facility"] == "Aarhus Site"

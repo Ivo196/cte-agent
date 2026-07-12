@@ -1,31 +1,25 @@
+"""Readable planner/action loop for clinical-trial matching."""
+
 from src.clinicaltrials_client import get_trial_details, search_trials
 from src.eligibility import passes_hard_filters
+from src.planner import (
+    PlannerDecisionError,
+    decide_next_action,
+    validate_decision,
+)
 from src.profile_extractor import extract_patient_profile
 from src.semantic_matcher import assess_trial_match
-from src.trial_cleaner import clean_trial, get_recruiting_locations_in_country
+from src.trial_cleaner import (
+    build_candidate_summary,
+    clean_trial,
+    select_nearest_recruiting_location,
+)
 
 
+MAX_AGENT_STEPS = 6
+MAX_SEARCHES = 2
 MAX_SEARCH_RESULTS = 20
-MAX_DETAILED_TRIALS = 6
-
-REQUIRED_FIELDS = [
-    "age",
-    "sex",
-    "condition",
-    "country",
-    "disease_stage",
-]
-
-CLARIFYING_QUESTIONS = {
-    "age": "What is your age?",
-    "sex": "What sex were you assigned at birth?",
-    "condition": "What condition or diagnosis are you looking for a trial for?",
-    "country": "Which country can you travel within?",
-    "disease_stage": (
-        "What stage is your cancer? For example, stage 1, 2, 3, "
-        "or stage 4/metastatic. If you do not know, please say so."
-    ),
-}
+MAX_DETAILED_TRIALS = 5
 
 LABEL_ORDER = {
     "likely_eligible": 0,
@@ -36,90 +30,155 @@ LABEL_ORDER = {
 SAFETY_DISCLAIMER = (
     "These are possible candidate matches only, not medical advice or "
     "a definitive eligibility decision. Please discuss them with your "
-    "doctor and the clinical trial team."
+    "doctor and the clinical trial team. If you need medical care, contact "
+    "an appropriate healthcare professional."
 )
 
 
-def get_missing_required_fields(profile: dict) -> list[str]:
-    return [
-        field
-        for field in REQUIRED_FIELDS
-        if profile.get(field) is None or profile.get(field) == ""
-    ]
+def build_initial_state(conversation_context: str, patient_profile: dict) -> dict:
+    """Create the compact, explicit state carried through one agent run."""
+    return {
+        "conversation_context": conversation_context,
+        "patient_profile": patient_profile,
+        "search_history": [],
+        "candidate_trials": [],
+        "selected_nct_ids": [],
+        "detailed_trials": [],
+        "assessed_results": [],
+        "step": 0,
+        "limits": {
+            "max_agent_steps": MAX_AGENT_STEPS,
+            "max_searches": MAX_SEARCHES,
+            "max_search_results": MAX_SEARCH_RESULTS,
+            "max_detailed_trials": MAX_DETAILED_TRIALS,
+        },
+    }
 
 
-def build_clarifying_question(missing_fields: list[str]) -> str:
-    return CLARIFYING_QUESTIONS[missing_fields[0]]
+def build_planner_view(state: dict) -> dict:
+    """Return only compact information that the planner needs."""
+    return {
+        "patient_profile": state["patient_profile"],
+        "search_history": state["search_history"],
+        "candidate_summaries": [
+            build_candidate_summary(trial) for trial in state["candidate_trials"]
+        ],
+        "selected_nct_ids": state["selected_nct_ids"],
+        "details_fetched": bool(state["detailed_trials"]),
+        "detailed_nct_ids": [
+            trial["nct_id"] for trial in state["detailed_trials"]
+        ],
+        "trials_assessed": bool(state["assessed_results"]),
+        "assessed_labels": [
+            {
+                "nct_id": result["nct_id"],
+                "label": result["label"],
+            }
+            for result in state["assessed_results"]
+        ],
+        "step": state["step"],
+        "limits": state["limits"],
+    }
 
 
 def _passes_initial_filters(patient: dict, trial: dict) -> bool:
     passed, _ = passes_hard_filters(
         patient=patient,
         trial=trial,
-        country=patient["country"],
+        country=patient.get("country"),
     )
-
-    if not passed:
-        return False
-
-    if trial.get("study_type") != "INTERVENTIONAL":
-        return False
-
-    return True
+    return passed
 
 
-def _search_shallow_candidates(patient: dict) -> list[dict]:
+def _execute_search(state: dict, decision: dict) -> None:
+    query = decision["query"]
     studies = search_trials(
-        condition=patient["condition"],
-        country=patient["country"],
+        condition=query["condition"],
+        country=query.get("country"),
         page_size=MAX_SEARCH_RESULTS,
     )
 
-    candidates = []
+    existing_ids = {
+        trial.get("nct_id")
+        for trial in state["candidate_trials"]
+        if trial.get("nct_id")
+    }
+    new_candidates = []
 
     for study in studies:
         trial = clean_trial(study)
+        nct_id = trial.get("nct_id")
+        if (
+            nct_id
+            and nct_id not in existing_ids
+            and _passes_initial_filters(state["patient_profile"], trial)
+        ):
+            new_candidates.append(trial)
+            existing_ids.add(nct_id)
 
-        if _passes_initial_filters(patient, trial):
-            candidates.append(trial)
+    state["candidate_trials"].extend(new_candidates)
+    state["selected_nct_ids"] = []
+    state["detailed_trials"] = []
+    state["assessed_results"] = []
+    state["search_history"].append(
+        {
+            "action": decision["action"],
+            "query": query,
+            "records_returned": len(studies),
+            "candidates_after_hard_filters": len(new_candidates),
+        }
+    )
 
-    return candidates
 
-
-def _fetch_detailed_trials(shallow_trials: list[dict]) -> list[dict]:
+def _fetch_selected_trials(state: dict) -> None:
     detailed_trials = []
 
-    for trial in shallow_trials[:MAX_DETAILED_TRIALS]:
-        full_study = get_trial_details(trial["nct_id"])
-        detailed_trials.append(clean_trial(full_study))
+    for nct_id in state["selected_nct_ids"][:MAX_DETAILED_TRIALS]:
+        full_study = get_trial_details(nct_id)
+        trial = clean_trial(full_study)
 
-    return detailed_trials
+        # Full records are checked again before any LLM eligibility call.
+        if _passes_initial_filters(state["patient_profile"], trial):
+            detailed_trials.append(trial)
+
+    state["detailed_trials"] = detailed_trials
 
 
 def _build_trial_result(patient: dict, trial: dict) -> dict:
     semantic_result = assess_trial_match(patient, trial)
-    local_locations = get_recruiting_locations_in_country(
-        trial,
-        patient["country"],
-    )
+    nearest_location = select_nearest_recruiting_location(trial, patient)
 
     return {
         "nct_id": trial["nct_id"],
         "title": trial["title"],
         "status": trial["status"],
         "phase": trial["phase"],
-        "location": local_locations[0] if local_locations else None,
+        "nearest_recruiting_location": nearest_location,
+        # Kept for the existing Streamlit renderer.
+        "location": nearest_location,
         "label": semantic_result["label"],
         "reason": semantic_result["reason"],
-        "missing_information": semantic_result["missing_information"],
+        "missing_information": semantic_result.get("missing_information", []),
         "trial_url": trial["trial_url"],
     }
+
+
+def _assess_detailed_trials(state: dict) -> None:
+    results = []
+    patient = state["patient_profile"]
+
+    for trial in state["detailed_trials"]:
+        # This guard makes the hard-before-soft ordering explicit and testable.
+        if _passes_initial_filters(patient, trial):
+            results.append(_build_trial_result(patient, trial))
+
+    state["assessed_results"] = _sort_results(results)
 
 
 def _sort_results(results: list[dict]) -> list[dict]:
     return sorted(
         results,
-        key=lambda result: LABEL_ORDER.get(result["label"], 3),
+        key=lambda result: LABEL_ORDER.get(result.get("label"), 3),
     )
 
 
@@ -128,38 +187,92 @@ def _results_reply(results: list[dict]) -> str:
         return "I found these possible candidate matches:"
 
     return (
-        "I could not find candidate trials that match the basic "
-        "age, sex, recruitment, and location filters."
+        "I could not find candidate trials that passed the available recruitment, "
+        "study type, age, sex, and location checks. You can discuss other search "
+        "options with your doctor or a clinical trial team."
     )
 
 
-def run_agent(user_message: str) -> dict:
-    """
-    Runs one agent turn: extract profile, ask if needed, search, inspect, rank.
-    """
-    patient = extract_patient_profile(user_message)
-    missing_fields = get_missing_required_fields(patient)
+def _build_question_response(state: dict, question: str) -> dict:
+    return {
+        "action": "ask_question",
+        "patient_profile": state["patient_profile"],
+        "question": question,
+        "disclaimer": SAFETY_DISCLAIMER,
+    }
 
-    # The agent does not search until it has the minimum clinical context.
-    if missing_fields:
-        return {
-            "action": "ask_question",
-            "patient_profile": patient,
-            "question": build_clarifying_question(missing_fields),
-        }
 
-    shallow_candidates = _search_shallow_candidates(patient)
-    detailed_trials = _fetch_detailed_trials(shallow_candidates)
-
-    # Only the shortlisted trials are sent to the LLM for softer eligibility checks.
-    results = _sort_results(
-        [_build_trial_result(patient, trial) for trial in detailed_trials]
-    )
-
+def _build_final_response(state: dict) -> dict:
+    results = _sort_results(state["assessed_results"])
     return {
         "action": "show_results",
-        "patient_profile": patient,
+        "patient_profile": state["patient_profile"],
         "reply": _results_reply(results),
         "results": results,
         "disclaimer": SAFETY_DISCLAIMER,
+        "search_history": state["search_history"],
+        "selected_nct_ids": state["selected_nct_ids"],
     }
+
+
+def _safe_fallback_response(state: dict, reason: str) -> dict:
+    """Stop predictably when the planner is malformed or the step limit is hit."""
+    if state["assessed_results"]:
+        return _build_final_response(state)
+
+    return {
+        "action": "show_results",
+        "patient_profile": state["patient_profile"],
+        "reply": (
+            "I could not safely complete the trial search in this turn. "
+            "Please try again or discuss trial options with your doctor."
+        ),
+        "results": [],
+        "disclaimer": SAFETY_DISCLAIMER,
+        "error": reason,
+        "search_history": state["search_history"],
+        "selected_nct_ids": state["selected_nct_ids"],
+    }
+
+
+def run_agent(conversation_context: str) -> dict:
+    """Run an LLM-directed planner/action loop with strict execution limits."""
+    patient_profile = extract_patient_profile(conversation_context)
+    state = build_initial_state(conversation_context, patient_profile)
+
+    for step in range(MAX_AGENT_STEPS):
+        state["step"] = step
+
+        try:
+            decision = decide_next_action(build_planner_view(state))
+            decision = validate_decision(decision, state)
+        except (PlannerDecisionError, ValueError, TypeError, KeyError) as exc:
+            return _safe_fallback_response(state, str(exc))
+
+        action = decision["action"]
+
+        if action == "ask_question":
+            return _build_question_response(state, decision["question"])
+
+        if action in {"search_trials", "refine_search"}:
+            _execute_search(state, decision)
+            continue
+
+        if action == "select_trials":
+            state["selected_nct_ids"] = decision["nct_ids"]
+            state["detailed_trials"] = []
+            state["assessed_results"] = []
+            continue
+
+        if action == "fetch_trial_details":
+            _fetch_selected_trials(state)
+            continue
+
+        if action == "assess_trials":
+            _assess_detailed_trials(state)
+            continue
+
+        if action == "return_results":
+            return _build_final_response(state)
+
+    return _safe_fallback_response(state, "The agent reached its step limit.")

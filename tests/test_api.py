@@ -1,4 +1,4 @@
-from src.clinicaltrials_client import TRIAL_FIELDS, search_trials
+from src.clinicaltrials_client import SEARCH_FIELDS, search_trials
 
 
 class FakeResponse:
@@ -27,5 +27,6 @@ def test_search_trials_sends_recruiting_filter_and_fields(monkeypatch) -> None:
     assert captured["params"]["filter.overallStatus"] == "RECRUITING"
     assert captured["params"]["filter.advanced"] == 'AREA[LocationCountry]"Denmark"'
     assert captured["params"]["pageSize"] == 100
-    assert captured["params"]["fields"] == ",".join(TRIAL_FIELDS)
+    assert captured["params"]["fields"] == ",".join(SEARCH_FIELDS)
+    assert "EligibilityCriteria" not in SEARCH_FIELDS
     assert captured["timeout"] == 20

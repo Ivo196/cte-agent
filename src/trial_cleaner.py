@@ -119,7 +119,6 @@ def clean_trial(study: dict) -> dict:
         "max_age": parse_age(eligibility_module.get("maximumAge")),
         "sex": eligibility_module.get("sex"),
         "healthy_volunteers": eligibility_module.get("healthyVolunteers"),
-        "eligibility_criteria": eligibility_criteria,
         "inclusion_criteria": structured_criteria["inclusion"],
         "exclusion_criteria": structured_criteria["exclusion"],
         "other_criteria": structured_criteria["other"],
@@ -128,15 +127,53 @@ def clean_trial(study: dict) -> dict:
     }
 
 
-def get_recruiting_locations_in_country(
-    trial: dict,
-    country: str,
-) -> list[dict]:
-    """
-    Returns recruiting sites in the requested country only.
-    """
-    return [
-        location
-        for location in trial["locations"]
-        if location.get("country", "").lower() == country.lower()
+def build_candidate_summary(trial: dict) -> dict:
+    """Build a small planner-safe view without raw API or eligibility records."""
+    locations = [
+        {
+            "city": location.get("city"),
+            "country": location.get("country"),
+        }
+        for location in trial.get("locations", [])[:8]
     ]
+    brief_summary = trial.get("brief_summary") or ""
+
+    return {
+        "nct_id": trial.get("nct_id"),
+        "title": trial.get("title"),
+        "phase": trial.get("phase", []),
+        "study_type": trial.get("study_type"),
+        "conditions": trial.get("conditions", []),
+        "age_range": {
+            "minimum": trial.get("min_age"),
+            "maximum": trial.get("max_age"),
+        },
+        "sex": trial.get("sex"),
+        "locations": locations,
+        "brief_summary": brief_summary[:500],
+    }
+
+
+def select_nearest_recruiting_location(
+    trial: dict,
+    patient: dict,
+) -> Optional[dict]:
+    """Prefer the patient's city, otherwise the first site in their country."""
+    locations = trial.get("locations", [])
+    country = patient.get("country")
+    city = patient.get("city")
+
+    country_locations = locations
+    if country:
+        country_locations = [
+            location
+            for location in locations
+            if location.get("country", "").casefold() == country.casefold()
+        ]
+
+    if city:
+        for location in country_locations:
+            if location.get("city", "").casefold() == city.casefold():
+                return location
+
+    return country_locations[0] if country_locations else None

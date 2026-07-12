@@ -20,7 +20,9 @@ Return valid JSON only with exactly these fields:
   "sex": null,
   "condition": null,
   "disease_stage": null,
+  "cancer_subtype": null,
   "prior_treatments": [],
+  "treatment_timing": null,
   "biomarkers": [],
   "country": null,
   "city": null,
@@ -34,6 +36,7 @@ Rules:
 - Normalize country names in English, for example "Denmark".
 - Normalize sex to "male" or "female" when known.
 - Keep treatments concise, for example "chemotherapy", "tamoxifen".
+- Keep subtype and treatment timing only when the patient states them.
 """
 
     return ask_json(prompt)

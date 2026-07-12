@@ -4,7 +4,7 @@ import requests
 
 BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
 
-TRIAL_FIELDS = [
+SEARCH_FIELDS = [
     "NCTId",
     "BriefTitle",
     "OverallStatus",
@@ -16,13 +16,11 @@ TRIAL_FIELDS = [
     "MaximumAge",
     "Sex",
     "HealthyVolunteers",
-    "EligibilityCriteria",
     "LocationFacility",
     "LocationCity",
     "LocationCountry",
     "LocationStatus",
 ]
-
 
 def search_trials(
     condition: str,
@@ -40,7 +38,7 @@ def search_trials(
         "query.cond": condition,
         "filter.overallStatus": "RECRUITING",
         "pageSize": page_size,
-        "fields": ",".join(TRIAL_FIELDS),
+        "fields": ",".join(SEARCH_FIELDS),
     }
 
     if country:

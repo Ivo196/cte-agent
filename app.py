@@ -44,12 +44,17 @@ def add_message(role: str, content: str, relevant: bool = True) -> None:
     )
 
 
-def get_user_context() -> str:
+def build_relevant_user_context(messages: list[dict]) -> str:
+    """Join only clinically relevant patient messages for profile extraction."""
     return "\n".join(
         message["content"]
-        for message in st.session_state.messages
+        for message in messages
         if message["role"] == "user" and message.get("relevant", True)
     )
+
+
+def get_user_context() -> str:
+    return build_relevant_user_context(st.session_state.messages)
 
 
 def render_history() -> None:
@@ -70,7 +75,7 @@ def render_trial_result(trial: dict) -> None:
 
     if location:
         st.write(
-            f"**Recruiting location:** "
+            f"**Nearest recruiting location:** "
             f'{location.get("facility", "Unknown site")} - '
             f'{location.get("city", "Unknown city")}, '
             f'{location.get("country", "Unknown country")}'
@@ -91,6 +96,8 @@ def render_results(result: dict) -> None:
 
     if not results:
         st.info(result.get("reply", "No candidate trials found."))
+        if result.get("disclaimer"):
+            st.info(result["disclaimer"])
         return
 
     for trial in results:

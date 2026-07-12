@@ -25,11 +25,12 @@ def normalize_sex(value: Optional[str]) -> Optional[str]:
 def passes_hard_filters(
     patient: dict,
     trial: dict,
-    country: str,
+    country: Optional[str],
 ) -> tuple[bool, list[str]]:
     """
     Checks objective criteria before using an LLM:
     - trial is recruiting
+    - trial is interventional
     - patient age fits
     - patient sex fits
     - trial has a recruiting site in the requested country
@@ -41,7 +42,11 @@ def passes_hard_filters(
     if trial.get("status") != "RECRUITING":
         reasons.append("Trial is not globally recruiting.")
 
-    # 2. Age
+    # 2. Study type
+    if trial.get("study_type") != "INTERVENTIONAL":
+        reasons.append("Trial is not an interventional study.")
+
+    # 3. Age
     patient_age = patient.get("age")
     min_age = trial.get("min_age")
     max_age = trial.get("max_age")
@@ -53,7 +58,7 @@ def passes_hard_filters(
         if max_age is not None and patient_age > max_age:
             reasons.append(f"Patient is older than the maximum age ({max_age}).")
 
-    # 3. Sex
+    # 4. Sex
     patient_sex = normalize_sex(patient.get("sex"))
     trial_sex = trial.get("sex")
 
@@ -64,14 +69,15 @@ def passes_hard_filters(
     ):
         reasons.append(f"Trial is restricted to {trial_sex.lower()} participants.")
 
-    # 4. Recruiting location in requested country
-    recruiting_locations_in_country = [
-        location
-        for location in trial.get("locations", [])
-        if location.get("country", "").lower() == country.lower()
-    ]
+    # 5. Recruiting location in requested country, when supplied
+    if country:
+        recruiting_locations_in_country = [
+            location
+            for location in trial.get("locations", [])
+            if location.get("country", "").casefold() == country.casefold()
+        ]
 
-    if not recruiting_locations_in_country:
-        reasons.append(f"No recruiting location found in {country}.")
+        if not recruiting_locations_in_country:
+            reasons.append(f"No recruiting location found in {country}.")
 
     return len(reasons) == 0, reasons
