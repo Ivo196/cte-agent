@@ -5,6 +5,12 @@ from src import planner
 
 def planner_state() -> dict:
     return {
+        "patient_profile": {
+            "age": 60,
+            "sex": "female",
+            "condition": "breast cancer",
+            "country": "Denmark",
+        },
         "search_history": [],
         "candidate_trials": [],
         "selected_nct_ids": [],
@@ -31,7 +37,14 @@ def test_llm_planner_receives_state_and_chooses_query(monkeypatch) -> None:
 
     decision = planner.decide_next_action(
         {
-            "patient_profile": {"condition": "breast cancer"},
+            "patient_profile": {
+                "age": 60,
+                "sex": "female",
+                "condition": "breast cancer",
+                "country": "Denmark",
+            },
+            "search_ready": True,
+            "missing_search_fields": [],
             "candidate_summaries": [],
             "search_history": [],
             "step": 0,
@@ -42,6 +55,20 @@ def test_llm_planner_receives_state_and_chooses_query(monkeypatch) -> None:
     assert decision["query"]["condition"] == "breast cancer"
     assert "refine_search" in captured["prompt"]
     assert '"patient_profile"' in captured["prompt"]
+    assert "When search_ready is true" in captured["prompt"]
+
+
+def test_optional_details_cannot_block_a_search_ready_profile() -> None:
+    state = planner_state()
+
+    with pytest.raises(planner.PlannerDecisionError, match="ready to search"):
+        planner.validate_decision(
+            {
+                "action": "ask_question",
+                "question": "What is the HER2 status?",
+            },
+            state,
+        )
 
 
 def test_refined_search_is_valid_only_after_first_search() -> None:

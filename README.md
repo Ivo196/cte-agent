@@ -90,9 +90,9 @@ ranked candidate matches + source links + safety disclaimer
 ```
 
 The project uses a small custom loop instead of LangGraph or another agent
-framework. For an 8-10 hour assignment, the explicit loop is easier to read,
-test, and explain line by line. The LLM decides what happens next; Python owns
-validation, limits, deterministic rules, and side effects.
+framework. Given the focused scope, the explicit loop is easier to read, test,
+and maintain. The LLM decides what happens next; Python owns validation,
+limits, deterministic rules, and side effects.
 
 ## Planner actions
 
@@ -143,6 +143,12 @@ The planner constructs the ClinicalTrials.gov query from the patient profile.
 It chooses a condition term and can include the patient's country. The API
 client always adds the recruiting-status filter and requests only the initial
 selection fields through the `fields` parameter.
+
+An initial search requires age, sex, condition, and country. Once those fields
+are available, optional details such as biomarkers, receptor status, residual
+disease, surgery status, or treatment timing do not block the search. Any
+missing optional information is reported with the assessed results for the
+patient and study team to confirm.
 
 If a query is too restrictive or returns weak candidates, the planner can use
 `refine_search` to try a broader or alternative condition term. For example,
@@ -212,8 +218,8 @@ Assessed trials are ranked in this order:
 
 For location, the prototype prefers a recruiting site in the patient's city.
 If there is no exact city match, it returns the first recruiting site in the
-requested country. This is an interview-friendly approximation, not a real
-geographic distance calculation.
+requested country. This is a deterministic fallback, not a geographic distance
+calculation.
 
 Every returned trial includes its NCT ID, title, status, phase, nearest
 reasonable recruiting location, label, one-line reason, missing information,

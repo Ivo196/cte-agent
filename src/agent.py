@@ -5,6 +5,7 @@ from src.eligibility import passes_hard_filters
 from src.planner import (
     PlannerDecisionError,
     decide_next_action,
+    get_missing_search_fields,
     validate_decision,
 )
 from src.profile_extractor import extract_patient_profile
@@ -57,8 +58,11 @@ def build_initial_state(conversation_context: str, patient_profile: dict) -> dic
 
 def build_planner_view(state: dict) -> dict:
     """Return only compact information that the planner needs."""
+    missing_search_fields = get_missing_search_fields(state["patient_profile"])
     return {
         "patient_profile": state["patient_profile"],
+        "search_ready": not missing_search_fields,
+        "missing_search_fields": missing_search_fields,
         "search_history": state["search_history"],
         "candidate_summaries": [
             build_candidate_summary(trial) for trial in state["candidate_trials"]
@@ -79,6 +83,24 @@ def build_planner_view(state: dict) -> dict:
         "step": state["step"],
         "limits": state["limits"],
     }
+
+
+def _get_valid_planner_decision(state: dict) -> dict:
+    """Give the planner one corrective retry after an invalid decision."""
+    planner_view = build_planner_view(state)
+    last_error: Exception | None = None
+
+    for _ in range(2):
+        if last_error is not None:
+            planner_view["validation_feedback"] = str(last_error)
+
+        try:
+            decision = decide_next_action(planner_view)
+            return validate_decision(decision, state)
+        except (PlannerDecisionError, ValueError, TypeError, KeyError) as exc:
+            last_error = exc
+
+    raise PlannerDecisionError(str(last_error))
 
 
 def _passes_initial_filters(patient: dict, trial: dict) -> bool:
@@ -137,7 +159,7 @@ def _fetch_selected_trials(state: dict) -> None:
         full_study = get_trial_details(nct_id)
         trial = clean_trial(full_study)
 
-        # Full records are checked again before any LLM eligibility call.
+        # Recheck hard constraints because detailed records may contain newer data.
         if _passes_initial_filters(state["patient_profile"], trial):
             detailed_trials.append(trial)
 
@@ -154,8 +176,6 @@ def _build_trial_result(patient: dict, trial: dict) -> dict:
         "status": trial["status"],
         "phase": trial["phase"],
         "nearest_recruiting_location": nearest_location,
-        # Kept for the existing Streamlit renderer.
-        "location": nearest_location,
         "label": semantic_result["label"],
         "reason": semantic_result["reason"],
         "missing_information": semantic_result.get("missing_information", []),
@@ -168,7 +188,7 @@ def _assess_detailed_trials(state: dict) -> None:
     patient = state["patient_profile"]
 
     for trial in state["detailed_trials"]:
-        # This guard makes the hard-before-soft ordering explicit and testable.
+        # Hard constraints always run before the semantic eligibility assessment.
         if _passes_initial_filters(patient, trial):
             results.append(_build_trial_result(patient, trial))
 
@@ -244,8 +264,7 @@ def run_agent(conversation_context: str) -> dict:
         state["step"] = step
 
         try:
-            decision = decide_next_action(build_planner_view(state))
-            decision = validate_decision(decision, state)
+            decision = _get_valid_planner_decision(state)
         except (PlannerDecisionError, ValueError, TypeError, KeyError) as exc:
             return _safe_fallback_response(state, str(exc))
 

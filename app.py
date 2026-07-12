@@ -64,7 +64,7 @@ def render_history() -> None:
 
 
 def render_trial_result(trial: dict) -> None:
-    location = trial.get("location") or {}
+    location = trial.get("nearest_recruiting_location") or {}
     phase = ", ".join(trial["phase"]) if trial["phase"] else "Not listed"
 
     st.subheader(f'{trial["nct_id"]} - {trial["title"]}')

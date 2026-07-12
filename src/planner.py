@@ -16,9 +16,20 @@ ACTIONS = {
     "return_results",
 }
 
+SEARCH_REQUIRED_FIELDS = ("age", "sex", "condition", "country")
+
 
 class PlannerDecisionError(ValueError):
     """Raised when a planner decision cannot be executed safely."""
+
+
+def get_missing_search_fields(patient_profile: dict) -> list[str]:
+    """Return only the patient fields required to start a useful search."""
+    return [
+        field
+        for field in SEARCH_REQUIRED_FIELDS
+        if patient_profile.get(field) in (None, "")
+    ]
 
 
 def decide_next_action(planner_view: dict) -> dict:
@@ -27,7 +38,7 @@ def decide_next_action(planner_view: dict) -> dict:
 
     prompt = f"""
 You are the planner for a patient-facing clinical trial matching agent.
-You genuinely control the next step. Do not assume a fixed workflow.
+Choose the next step from the current state. Do not assume a fixed workflow.
 
 Choose exactly one action:
 - ask_question: ask for one clinically important missing fact.
@@ -40,7 +51,14 @@ Choose exactly one action:
   when a completed search found no viable candidates.
 
 Decision rules:
-- Ask only eligibility-relevant questions. Do not require every possible field.
+- Use ask_question only when search_ready is false. Ask for one field listed in
+  missing_search_fields.
+- When search_ready is true and no search has run, choose search_trials.
+- Biomarkers, receptor status, disease status, surgery status, treatment timing,
+  and other soft criteria must not block the initial search. Missing optional
+  details should be reported after trial assessment for the patient to confirm.
+- Do not repeat questions that ask for finer versions of information already in
+  the patient profile.
 - You decide the search condition and optional country from the patient profile.
 - Refine a search only when it is useful and the search limit allows it.
 - Never invent NCT IDs. Select only IDs listed in candidate_summaries.
@@ -78,6 +96,12 @@ def validate_decision(decision: Any, state: dict) -> dict:
     normalized = {"action": action}
 
     if action == "ask_question":
+        missing_fields = get_missing_search_fields(state["patient_profile"])
+        if not missing_fields:
+            raise PlannerDecisionError(
+                "The profile is ready to search; optional clinical details must "
+                "not block the initial search."
+            )
         question = decision.get("question")
         if not isinstance(question, str) or not question.strip():
             raise PlannerDecisionError("ask_question requires a question.")

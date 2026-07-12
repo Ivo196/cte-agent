@@ -13,4 +13,5 @@ def test_profile_prompt_includes_subtype_and_treatment_timing(monkeypatch) -> No
     profile_extractor.extract_patient_profile("HER2-positive breast cancer")
 
     assert '"cancer_subtype"' in captured["prompt"]
+    assert '"disease_status"' in captured["prompt"]
     assert '"treatment_timing"' in captured["prompt"]

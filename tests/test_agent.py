@@ -129,6 +129,10 @@ def test_planner_can_refine_search_but_never_exceeds_limit(monkeypatch) -> None:
                 "action": "refine_search",
                 "query": {"condition": "breast neoplasm", "country": "Denmark"},
             },
+            {
+                "action": "refine_search",
+                "query": {"condition": "breast neoplasm", "country": "Denmark"},
+            },
         ),
     )
     monkeypatch.setattr(
@@ -256,6 +260,7 @@ def test_full_details_are_capped_at_maximum(monkeypatch) -> None:
                 "nct_ids": [trial["nct_id"] for trial in trials],
             },
             {"action": "fetch_trial_details"},
+            {"action": "return_results"},
             {"action": "return_results"},
         ),
     )
@@ -399,3 +404,34 @@ def test_malformed_planner_response_fails_safely(monkeypatch) -> None:
     assert result["results"] == []
     assert "JSON object" in result["error"]
     assert "not medical advice" in result["disclaimer"]
+
+
+def test_search_ready_profile_retries_after_optional_question(monkeypatch) -> None:
+    configure_profile(monkeypatch)
+    search_calls = []
+    monkeypatch.setattr(
+        agent,
+        "decide_next_action",
+        decision_sequence(
+            {
+                "action": "ask_question",
+                "question": "What is the HER2 status?",
+            },
+            {
+                "action": "search_trials",
+                "query": {"condition": "breast cancer", "country": "Denmark"},
+            },
+            {"action": "return_results"},
+        ),
+    )
+    monkeypatch.setattr(
+        agent,
+        "search_trials",
+        lambda **query: search_calls.append(query) or [],
+    )
+
+    result = agent.run_agent("complete profile")
+
+    assert result["action"] == "show_results"
+    assert len(search_calls) == 1
+    assert result["search_history"][0]["query"]["condition"] == "breast cancer"

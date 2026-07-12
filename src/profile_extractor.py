@@ -20,6 +20,7 @@ Return valid JSON only with exactly these fields:
   "sex": null,
   "condition": null,
   "disease_stage": null,
+  "disease_status": null,
   "cancer_subtype": null,
   "prior_treatments": [],
   "treatment_timing": null,
@@ -31,11 +32,14 @@ Return valid JSON only with exactly these fields:
 
 Rules:
 - Do not invent information.
+- The conversation may be multilingual. Normalize extracted values to English.
+- Use the full conversation to interpret short follow-up answers.
 - Use null when a single value is unknown.
 - Use [] when a list is unknown.
 - Normalize country names in English, for example "Denmark".
 - Normalize sex to "male" or "female" when known.
 - Keep treatments concise, for example "chemotherapy", "tamoxifen".
+- Capture residual, recurrent, localized, or metastatic disease in disease_status.
 - Keep subtype and treatment timing only when the patient states them.
 """
 
